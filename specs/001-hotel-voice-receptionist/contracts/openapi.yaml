@@ -1,0 +1,556 @@
+openapi: 3.1.0
+info:
+  title: Hotel Voice Receptionist API
+  version: 1.0.0
+  description: >-
+    Guest session, hotel action, voice session brokerage, and staff help-request
+    contracts for a single-hotel demonstration. Provider credentials and database
+    access remain server-side. No endpoint creates a live Uber trip or payment.
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: localhost
+paths:
+  /guest/sessions:
+    post:
+      operationId: createGuestSession
+      summary: Start an expiring kiosk session in the selected language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [language]
+              properties:
+                language:
+                  type: string
+                  enum: [en, vi]
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuestSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /guest/reservation-lookups:
+    post:
+      operationId: lookUpReservation
+      summary: Look up a synthetic reservation without changing its status
+      security:
+        - GuestSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reservationCode]
+              properties:
+                reservationCode:
+                  type: string
+                  minLength: 4
+                  maxLength: 32
+      responses:
+        '200':
+          description: Masked reservation details requiring guest review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationLookup'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/reservation-lookups/{lookupId}/confirm:
+    post:
+      operationId: confirmReservationLookup
+      summary: Associate the reviewed reservation with this guest session
+      security:
+        - GuestSession: []
+      parameters:
+        - $ref: '#/components/parameters/LookupId'
+      responses:
+        '200':
+          description: Reservation is now scoped to the guest session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuestSession'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/bill:
+    get:
+      operationId: getGuestBill
+      summary: Retrieve the active stay bill for review
+      security:
+        - GuestSession: []
+      responses:
+        '200':
+          description: Itemized bill; this endpoint does not collect payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bill'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/actions:
+    post:
+      operationId: prepareGuestAction
+      summary: Prepare an action and return its localized summary for review
+      description: >-
+        This endpoint never commits an action. The guest must explicitly confirm
+        the returned action identifier and exact summary before any state change.
+      security:
+        - GuestSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareActionRequest'
+      responses:
+        '201':
+          description: Pending action awaiting guest confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/actions/{actionId}/confirm:
+    post:
+      operationId: confirmGuestAction
+      summary: Commit one unexpired pending action after guest confirmation
+      security:
+        - GuestSession: []
+      parameters:
+        - $ref: '#/components/parameters/ActionId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmed]
+              properties:
+                confirmed:
+                  type: boolean
+                  const: true
+                  description: Set only after explicit voice or touch confirmation by the guest.
+      responses:
+        '200':
+          description: The action outcome, including simulated ride status where applicable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionOutcome'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/actions/{actionId}/cancel:
+    post:
+      operationId: cancelGuestAction
+      summary: Cancel a pending action before it is committed
+      security:
+        - GuestSession: []
+      parameters:
+        - $ref: '#/components/parameters/ActionId'
+      responses:
+        '200':
+          description: Pending action cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /guest/voice/sdp:
+    post:
+      operationId: negotiateVoiceSession
+      summary: Broker SDP negotiation for an expiring Azure voice session
+      description: >-
+        The trusted API authenticates to Azure and returns the SDP answer. The
+        browser receives no Azure key or provider credential. Audio then streams
+        over the negotiated WebRTC media connection.
+      security:
+        - GuestSession: []
+      requestBody:
+        required: true
+        content:
+          application/sdp:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: SDP answer
+          content:
+            application/sdp:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          description: Voice provider unavailable
+
+  /staff/help-requests:
+    get:
+      operationId: listStaffHelpRequests
+      summary: List help requests for authenticated staff
+      security:
+        - StaffSession: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, acknowledged]
+      responses:
+        '200':
+          description: Staff-visible help requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HelpRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /guest/help-requests/{requestId}:
+    get:
+      operationId: getGuestHelpRequest
+      summary: Get the status of a help request owned by this guest session
+      security:
+        - GuestSession: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Guest-visible help request status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /staff/sessions:
+    post:
+      operationId: createStaffSession
+      summary: Create a staff session for the local demo sign-in
+      description: Local demo credentials are not production authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: Staff session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /staff/help-requests/{requestId}/acknowledgement:
+    put:
+      operationId: acknowledgeHelpRequest
+      summary: Acknowledge a guest help request
+      security:
+        - StaffSession: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    GuestSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque session token
+    StaffSession:
+      type: http
+      scheme: bearer
+      bearerFormat: staff session token
+  parameters:
+    LookupId:
+      name: lookupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ActionId:
+      name: actionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    GuestSession:
+      type: object
+      required: [sessionToken, language, expiresAt, status]
+      properties:
+        sessionToken:
+          type: string
+          description: Opaque session token; retain only for the active kiosk session.
+        language:
+          type: string
+          enum: [en, vi]
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, ended, expired]
+        reservation:
+          oneOf:
+            - $ref: '#/components/schemas/ReservationSummary'
+            - type: 'null'
+    ReservationLookup:
+      type: object
+      required: [lookupId, reservation, requiresConfirmation]
+      properties:
+        lookupId:
+          type: string
+          format: uuid
+        reservation:
+          $ref: '#/components/schemas/ReservationSummary'
+        requiresConfirmation:
+          type: boolean
+          const: true
+    ReservationSummary:
+      type: object
+      required: [displayName, arrivalDate, departureDate, status]
+      properties:
+        displayName:
+          type: string
+        arrivalDate:
+          type: string
+          format: date
+        departureDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [reserved, checked_in, checked_out, cancelled]
+        roomNumber:
+          type: string
+    Bill:
+      type: object
+      required: [items, currency, totalAmountMinor, status]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [description, quantity, unitAmountMinor, lineTotalMinor]
+            properties:
+              description:
+                type: string
+              quantity:
+                type: number
+              unitAmountMinor:
+                type: integer
+                minimum: 0
+              lineTotalMinor:
+                type: integer
+                minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        totalAmountMinor:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [open, reviewed, closed]
+    PrepareActionRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [check_in, check_out, staff_help, uber_ride]
+        details:
+          type: object
+          description: >-
+            Action-specific data. For staff_help this includes a summary. For
+            uber_ride this includes a configured destination identifier. The API
+            validates all values and computes the localized confirmation summary.
+          properties:
+            summary:
+              type: string
+              maxLength: 500
+            destinationId:
+              type: string
+              maxLength: 64
+          additionalProperties: false
+    PendingAction:
+      type: object
+      required: [actionId, kind, summary, status, expiresAt]
+      properties:
+        actionId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [check_in, check_out, staff_help, uber_ride]
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, cancelled, expired, failed]
+        expiresAt:
+          type: string
+          format: date-time
+    ActionOutcome:
+      type: object
+      required: [actionId, status, message]
+      properties:
+        actionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [completed, simulated, failed]
+        message:
+          type: string
+        result:
+          type: object
+          description: >-
+            For check_in, includes roomNumber and an opaque display-only
+            roomBarcodePayload. For staff_help, includes helpRequestId. For
+            uber_ride, includes a simulated status. Never return provider secrets.
+          properties:
+            roomNumber:
+              type: string
+            roomBarcodePayload:
+              type: string
+              description: Display-only demo barcode payload, not a door credential.
+            helpRequestId:
+              type: string
+              format: uuid
+            rideStatus:
+              type: string
+              enum: [simulated, unavailable, failed]
+          additionalProperties: false
+    HelpRequest:
+      type: object
+      required: [id, summary, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [pending, acknowledged]
+        createdAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+    StaffSession:
+      type: object
+      required: [sessionToken, expiresAt]
+      properties:
+        sessionToken:
+          type: string
+          description: Short-lived staff session token for the local demo.
+        expiresAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid session
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found in the current session
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Invalid state transition, expired session, or stale action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
