@@ -7,7 +7,7 @@
 ### Browser voice transport
 
 **Decision**: Use Azure GPT-Live over WebRTC for the browser kiosk's low-latency audio session.
-FastAPI creates the session and relays the SDP answer; media then flows between the browser and Azure.
+FastAPI creates the session with `POST /openai/v1/live/sessions` and relays the SDP answer from the JSON response; media then flows between the browser and Azure.
 Keep credentials on the server and create one expiring voice session per kiosk guest.
 
 **Rationale**: Microsoft documents WebRTC for low-latency browser audio, with the API holding credentials because GPT-Live does not issue ephemeral client keys.
@@ -17,7 +17,7 @@ The selected Foundry deployment and both languages still need an acceptance run 
 **Alternatives considered**: Server-to-server WebSocket streaming would keep media server-side but adds a media relay and is not the recommended browser transport for low-latency audio.
 Voice Live is an alternative unified speech service, but using it alongside GPT-Live in the first release would duplicate the voice path without a specified need.
 
-Sources: [GPT-Live WebRTC](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/gpt-live-webrtc), [realtime language support](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-language-support), [Voice Live WebRTC](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-webrtc).
+Sources: [GPT-Live WebRTC](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/gpt-live-webrtc), [GPT-Live event reference](https://learn.microsoft.com/en-us/azure/foundry/openai/gpt-live-reference), [realtime language support](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-language-support), [Voice Live WebRTC](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-webrtc).
 
 ### Agent and action boundary
 

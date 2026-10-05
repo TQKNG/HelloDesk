@@ -1,0 +1,24 @@
+[
+  {
+    "id": "demo-union-square",
+    "labels": {
+      "en": "Union Square, San Francisco",
+      "vi": "Quảng trường Union, San Francisco"
+    },
+    "sandboxDropoff": {
+      "latitude": 37.75203,
+      "longitude": -122.422065
+    }
+  },
+  {
+    "id": "demo-ferry-building",
+    "labels": {
+      "en": "Ferry Building, San Francisco",
+      "vi": "Ferry Building, San Francisco"
+    },
+    "sandboxDropoff": {
+      "latitude": 37.77493,
+      "longitude": -122.419415
+    }
+  }
+]

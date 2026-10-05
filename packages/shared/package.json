@@ -1,0 +1,19 @@
+{
+  "name": "@hellodesk/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api-types": "./src/api-types.ts",
+    "./api-client": "./src/api-client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.8"
+  }
+}

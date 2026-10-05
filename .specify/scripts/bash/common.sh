@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 9872)
-Total output lines: 942
-
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
@@ -366,7 +363,201 @@ format_speckit_command() {
     else
         separator=$(get_invoke_separator "$repo_root")
         _SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT="$repo_root"
-   …1872 tokens truncated…t(1)
+        _SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE="$separator"
+    fi
+
+    command_name="${command_name#/}"
+    command_name="${command_name#speckit.}"
+    command_name="${command_name#speckit-}"
+    command_name="${command_name//./$separator}"
+
+    printf '$speckit%s%s\n' "$separator" "$command_name"
+}
+
+# Escape a string for safe embedding in a JSON value (fallback when jq is unavailable).
+# Handles backslash, double-quote, and JSON-required control character escapes (RFC 8259).
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\b'/\\b}"
+    s="${s//$'\f'/\\f}"
+    # Escape any remaining U+0001-U+001F control characters as \uXXXX.
+    # (U+0000/NUL cannot appear in bash strings and is excluded.)
+    # LC_ALL=C ensures ${#s} counts bytes and ${s:$i:1} yields single bytes,
+    # so multi-byte UTF-8 sequences (first byte >= 0xC0) pass through intact.
+    local LC_ALL=C
+    local i char code
+    for (( i=0; i<${#s}; i++ )); do
+        char="${s:$i:1}"
+        printf -v code '%d' "'$char" 2>/dev/null || code=256
+        if (( code >= 1 && code <= 31 )); then
+            printf '\\u%04x' "$code"
+        else
+            printf '%s' "$char"
+        fi
+    done
+}
+
+check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
+check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
+
+_python3_command() {
+    # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
+    # kept as a deprecated fallback (still used by update-agent-context.sh).
+    local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
+    if [[ -n "$override" ]] && command -v "$override" >/dev/null 2>&1 &&
+        "$override" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
+        "$override" -c 'import yaml' >/dev/null 2>&1; then
+        printf '%s\n' "$override"
+    elif command -v python3 >/dev/null 2>&1 &&
+        python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python3"
+    elif command -v python >/dev/null 2>&1 &&
+        python -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        printf '%s\n' "python"
+    elif command -v py >/dev/null 2>&1 &&
+        py -3 -c 'import sys' >/dev/null 2>&1; then
+        printf '%s\n' "py" "-3"
+    else
+        return 1
+    fi
+}
+
+_sorted_extension_ids() {
+    local ext_dir="$1"
+    local -a python_cmd=()
+    local _python_cmd_line
+    while IFS= read -r _python_cmd_line; do
+        python_cmd+=("$_python_cmd_line")
+    done < <(_python3_command)
+    if [ "${#python_cmd[@]}" -gt 0 ]; then
+        local py_stderr sorted_ids
+        py_stderr=$(mktemp)
+        if sorted_ids=$(SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
+import json, os, re, sys
+from pathlib import Path
+
+root = Path(os.environ['SPECKIT_EXTENSIONS'])
+registered = {}
+registry = root / '.registry'
+if os.path.lexists(registry):
+    if not registry.is_file():
+        print('registry_invalid: not a regular file', file=sys.stderr)
+        sys.exit(1)
+    try:
+        data = json.loads(registry.read_text(encoding='utf-8'))
+    except Exception as exc:
+        print('registry_invalid: ' + str(exc), file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print('registry_invalid: root must be a mapping', file=sys.stderr)
+        sys.exit(1)
+    raw_extensions = data.get('extensions', {})
+    if not isinstance(raw_extensions, dict):
+        print('registry_invalid: extensions must be a mapping', file=sys.stderr)
+        sys.exit(1)
+    registered = raw_extensions
+
+def priority(value):
+    if isinstance(value, bool):
+        return 10
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 1 else 10
+    except (TypeError, ValueError, OverflowError):
+        return 10
+
+ranked = []
+for ext_id, meta in registered.items():
+    if isinstance(ext_id, str) and re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):
+        ranked.append((priority(meta.get('priority')), ext_id))
+for path in root.iterdir():
+    if path.is_dir() and re.fullmatch(r'[a-z0-9-]+', path.name) and path.name not in registered:
+        ranked.append((10, path.name))
+for _, ext_id in sorted(ranked):
+    print(ext_id)
+" 2>"$py_stderr"); then
+            rm -f "$py_stderr"
+            printf '%s\n' "$sorted_ids"
+            return 0
+        else
+            echo "Error: invalid extension registry $ext_dir/.registry" >&2
+            rm -f "$py_stderr"
+            return 1
+        fi
+    fi
+
+    if [ -e "$ext_dir/.registry" ] || [ -L "$ext_dir/.registry" ]; then
+        if [ ! -f "$ext_dir/.registry" ] || [ ! -r "$ext_dir/.registry" ]; then
+            echo "Error: invalid extension registry $ext_dir/.registry" >&2
+            return 1
+        fi
+        echo "Error: Python 3 is required to honor the extension registry" >&2
+        return 2
+    fi
+
+    local ext extension_id
+    for ext in "$ext_dir"/*/; do
+        [ -d "$ext" ] || continue
+        extension_id=$(basename "$ext")
+        case "$extension_id" in *[!a-z0-9-]*) continue ;; esac
+        printf '%s\n' "$extension_id"
+    done
+}
+
+# Resolve a template name to a file path using the priority stack:
+#   1. .specify/templates/overrides/
+#   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
+#   3. .specify/extensions/<ext-id>/templates/
+#   4. .specify/templates/ (core)
+resolve_template() {
+    local template_name="$1"
+    local repo_root="$2"
+    local base="$repo_root/.specify/templates"
+
+    case "$template_name" in ""|*[!a-z0-9-]*) return 1 ;; esac
+
+    # Priority 1: Project overrides
+    local override="$base/overrides/${template_name}.md"
+    [ -f "$override" ] && echo "$override" && return 0
+
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    local presets_dir="$repo_root/.specify/presets"
+    if [ -d "$presets_dir" ]; then
+        local registry_file="$presets_dir/.registry"
+        local -a python_cmd=()
+        local _python_cmd_line
+        while IFS= read -r _python_cmd_line; do
+            python_cmd+=("$_python_cmd_line")
+        done < <(_python3_command)
+        if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
+            # Read preset IDs sorted by priority (lower number = higher precedence).
+            # The python3 call is wrapped in an if-condition so that set -e does not
+            # abort the function when python3 exits non-zero (e.g. invalid JSON).
+            local sorted_presets=""
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
+import json, re, sys, os
+try:
+    with open(os.environ['SPECKIT_REGISTRY'], encoding='utf-8') as f:
+        data = json.load(f)
+    presets = data.get('presets', {})
+    def priority(meta):
+        if not isinstance(meta, dict) or isinstance(meta.get('priority'), bool):
+            return 10
+        try:
+            value = int(meta.get('priority', 10))
+            return value if value >= 1 else 10
+        except (TypeError, ValueError, OverflowError):
+            return 10
+    for pid, meta in sorted(presets.items(), key=lambda x: (priority(x[1]), x[0])):
+        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
+            print(pid)
+except Exception:
+    sys.exit(1)
 " 2>/dev/null); then
                 if [ -n "$sorted_presets" ]; then
                     # python3 succeeded and returned preset IDs — search in priority order

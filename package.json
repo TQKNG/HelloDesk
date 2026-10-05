@@ -1,0 +1,14 @@
+{
+  "name": "hellodesk",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "pnpm --filter @hellodesk/web dev",
+    "build": "pnpm --filter @hellodesk/web build",
+    "start": "pnpm --filter @hellodesk/web start",
+    "lint": "pnpm --filter @hellodesk/web lint",
+    "typecheck": "pnpm --filter @hellodesk/web typecheck && pnpm --filter @hellodesk/shared typecheck",
+    "test": "pnpm --filter @hellodesk/shared test && pnpm --filter @hellodesk/web test"
+  }
+}

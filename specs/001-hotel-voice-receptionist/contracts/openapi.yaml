@@ -81,7 +81,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GuestSession'
+                $ref: '#/components/schemas/GuestSessionState'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -266,6 +266,26 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /guest/hotel-questions:
+    post:
+      operationId: answerHotelQuestion
+      summary: Answer a configured hotel question or offer staff help
+      security:
+        - GuestSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelQuestionRequest'
+      responses:
+        '200':
+          description: A localized configured answer, or a staff-help fallback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelQuestionResponse'
+
   /staff/sessions:
     post:
       operationId: createStaffSession
@@ -365,6 +385,19 @@ components:
           oneOf:
             - $ref: '#/components/schemas/ReservationSummary'
             - type: 'null'
+    GuestSessionState:
+      type: object
+      required: [language, expiresAt, status]
+      properties:
+        language:
+          type: string
+          enum: [en, vi]
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, ended, expired]
     ReservationLookup:
       type: object
       required: [lookupId, reservation, requiresConfirmation]
@@ -492,6 +525,9 @@ components:
             rideStatus:
               type: string
               enum: [simulated, unavailable, failed]
+            rideRequestId:
+              type: string
+              format: uuid
           additionalProperties: false
     HelpRequest:
       type: object
@@ -511,6 +547,23 @@ components:
         acknowledgedAt:
           type: string
           format: date-time
+    HotelQuestionRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Ephemeral input. The API does not persist or log it.
+    HotelQuestionResponse:
+      type: object
+      required: [needsStaffHelp]
+      properties:
+        answer:
+          type: string
+        needsStaffHelp:
+          type: boolean
     StaffSession:
       type: object
       required: [sessionToken, expiresAt]
