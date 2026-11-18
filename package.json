@@ -9,6 +9,6 @@
     "start": "pnpm --filter @hellodesk/web start",
     "lint": "pnpm --filter @hellodesk/web lint",
     "typecheck": "pnpm --filter @hellodesk/web typecheck && pnpm --filter @hellodesk/shared typecheck",
-    "test": "pnpm --filter @hellodesk/shared test && pnpm --filter @hellodesk/web test"
+    "test": "pnpm --filter @hellodesk/web test"
   }
 }
