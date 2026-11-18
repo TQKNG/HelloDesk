@@ -76,7 +76,7 @@ class ConfirmationService:
                     raise ConflictError("This action has already been submitted.")
                 if action.outcome is None:
                     raise ConflictError("This action is already being confirmed.")
-                return ActionOutcome.model_validate(action.outcome)
+                return ActionOutcome.model_validate(action.outcome, by_alias=True)
             if action.status is not PendingActionStatus.PENDING:
                 raise ConflictError("This action is no longer pending.")
             action = action.model_copy(update={"request_id": request_id})
