@@ -104,7 +104,7 @@ class ConfirmationService:
             confirmed_action = action.model_copy(
                 update={
                     "status": PendingActionStatus.CONFIRMED,
-                    "outcome": outcome.model_dump(mode="json", by_alias=True),
+                    "outcome": outcome.model_dump(mode="json"),
                 }
             )
             self._actions[action.id] = confirmed_action

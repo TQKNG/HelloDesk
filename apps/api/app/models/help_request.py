@@ -22,6 +22,7 @@ class HelpRequestRecord(BaseModel):
 
 
 class HelpRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     summary: str
     status: HelpRequestStatus

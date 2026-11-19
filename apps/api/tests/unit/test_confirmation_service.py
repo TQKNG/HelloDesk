@@ -6,7 +6,7 @@ import pytest
 from app.core.errors import ActionExpiredError, ConflictError, InvalidInputError
 from app.core.settings import Settings
 from app.models.guest_session import GuestSessionRecord, Language
-from app.models.pending_action import PendingActionKind, PrepareActionRequest
+from app.models.pending_action import ActionOutcome, PendingActionKind, PrepareActionRequest
 from app.services.confirmation_service import ConfirmationService
 
 
@@ -34,6 +34,11 @@ async def test_pending_action_requires_explicit_confirmation() -> None:
 async def test_confirmation_is_idempotent_but_cannot_be_replayed_with_another_key() -> None:
     now = datetime(2026, 10, 4, tzinfo=UTC)
     service = ConfirmationService(Settings(), now=lambda: now)
+
+    async def handle_check_in(action, _session):
+        return ActionOutcome(action_id=action.id, status="completed", message="Check-in complete.")
+
+    service.register_handler(PendingActionKind.CHECK_IN, handle_check_in)
     session = active_session(now)
     action = await service.prepare(session, PrepareActionRequest(kind=PendingActionKind.CHECK_IN))
     request_id = uuid4()
